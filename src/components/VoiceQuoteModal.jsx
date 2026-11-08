@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, MicOff, Sparkles, Volume2, ArrowRight, X, Play, RotateCcw, Check, Edit3 } from 'lucide-react';
-import { parseVoiceQuoteText } from '../utils/voiceParser';
+import { parseVoiceQuoteText, deduplicateSpeech } from '../utils/voiceParser';
 
 const SAMPLE_VOICE_NOTES = [
   {
@@ -27,37 +27,30 @@ export default function VoiceQuoteModal({ onClose, onQuoteGenerated }) {
   const [speechSupported, setSpeechSupported] = useState(true);
   
   const recognitionRef = useRef(null);
-  const finalTranscriptRef = useRef('');
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
-      recognition.continuous = true;
+      // On Android Chrome, continuous=false is strictly required to prevent infinite sentence looping
+      recognition.continuous = false;
       recognition.interimResults = true;
-      recognition.lang = 'es-CO'; // Optimizado para pronunciación y acento colombiano
+      recognition.lang = 'es-CO'; // Español Colombia
 
       recognition.onresult = (event) => {
-        let interimTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const part = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscriptRef.current += ' ' + part;
-          } else {
-            interimTranscript += part;
-          }
+        let textResult = '';
+        // Extract the latest spoken sentence
+        for (let i = 0; i < event.results.length; i++) {
+          textResult += event.results[i][0].transcript + ' ';
         }
         
-        // Clean multiple spaces and deduplicate
-        const fullTranscript = (finalTranscriptRef.current + ' ' + interimTranscript)
-          .replace(/\s+/g, ' ')
-          .trim();
-          
-        setTranscript(fullTranscript);
+        // Remove duplicate loops caused by mobile speech engines
+        const cleaned = deduplicateSpeech(textResult);
+        setTranscript(cleaned);
       };
 
       recognition.onerror = (err) => {
-        console.warn('Speech recognition error:', err);
+        console.warn('Speech recognition status:', err);
         setIsRecording(false);
       };
 
@@ -89,7 +82,6 @@ export default function VoiceQuoteModal({ onClose, onQuoteGenerated }) {
       recognitionRef.current?.stop();
       setIsRecording(false);
     } else {
-      finalTranscriptRef.current = '';
       setTranscript('');
       try {
         recognitionRef.current?.start();
@@ -101,23 +93,21 @@ export default function VoiceQuoteModal({ onClose, onQuoteGenerated }) {
   };
 
   const handleUseSample = (sample) => {
-    finalTranscriptRef.current = sample.text;
     setTranscript(sample.text);
     processAudioText(sample.text);
   };
 
   const processAudioText = (textToProcess) => {
-    const text = (textToProcess || transcript).trim();
-    if (!text) return;
+    const raw = (textToProcess || transcript).trim();
+    if (!raw) return;
 
     setIsProcessing(true);
 
     setTimeout(() => {
-      // Use intelligent Spanish NLP parser
-      const parsedQuote = parseVoiceQuoteText(text);
+      const parsedQuote = parseVoiceQuoteText(raw);
       setIsProcessing(false);
       onQuoteGenerated(parsedQuote);
-    }, 800);
+    }, 700);
   };
 
   return (
@@ -163,10 +153,10 @@ export default function VoiceQuoteModal({ onClose, onQuoteGenerated }) {
           </button>
 
           <p className="mt-4 font-bold text-slate-800 text-xs sm:text-sm">
-            {isRecording ? '🔴 Grabando... Di tu cotización ahora' : 'Toca el micrófono para hablar'}
+            {isRecording ? '🔴 Grabando... Di tu frase ahora' : 'Toca el micrófono para hablar'}
           </p>
           <p className="text-[11px] text-slate-400 mt-1 max-w-xs sm:max-w-sm">
-            Toca una vez para empezar a hablar y vuelve a tocar cuando termines.
+            Toca el botón, di tu frase clara y toca para detener cuando termines.
           </p>
 
           {/* Transcript Box with Live Editability */}
@@ -175,7 +165,7 @@ export default function VoiceQuoteModal({ onClose, onQuoteGenerated }) {
               <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
                 <span>Texto Capturado:</span>
                 <span className="flex items-center gap-1 text-slate-500 normal-case">
-                  <Edit3 className="w-3 h-3" /> Puedes editar si hay algún detalle
+                  <Edit3 className="w-3 h-3" /> Puedes editar si deseas
                 </span>
               </div>
               
@@ -189,7 +179,7 @@ export default function VoiceQuoteModal({ onClose, onQuoteGenerated }) {
               <div className="mt-3 flex items-center justify-between gap-2">
                 <button
                   type="button"
-                  onClick={() => { finalTranscriptRef.current = ''; setTranscript(''); }}
+                  onClick={() => setTranscript('')}
                   className="text-xs text-slate-400 hover:text-slate-600 font-medium"
                 >
                   Borrar
@@ -212,7 +202,7 @@ export default function VoiceQuoteModal({ onClose, onQuoteGenerated }) {
         {/* Preset Samples */}
         <div className="pt-4 border-t border-slate-100">
           <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-2.5">
-            O prueba con audios pregrabados de ejemplo:
+            O prueba con audios de ejemplo con 1 toque:
           </span>
 
           <div className="space-y-2">
