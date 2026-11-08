@@ -2,23 +2,27 @@ import React, { useState } from 'react';
 import { 
   ArrowLeft, Share2, Printer, CheckCircle2, Clock, 
   MapPin, Phone, Mail, Building, FileText, Send, Sparkles, 
-  Bot, CreditCard, ShieldCheck, Check
+  Bot, CreditCard, ShieldCheck, Check, Copy, ExternalLink 
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { calculateTotals, formatCurrency } from '../utils/storage';
+import { getShareableQuoteUrl } from '../utils/shareUtils';
 import SignaturePad from './SignaturePad';
 import DepositPaymentModal from './DepositPaymentModal';
 import FollowUpModal from './FollowUpModal';
 
-export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
+export default function QuoteView({ quote, business, onBack, onUpdateQuote, isClientMode = false, onGoToApp }) {
   const [showSignModal, setShowSignModal] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const totals = calculateTotals(quote.items, quote.discountPercent, quote.taxPercent);
   const depositPercent = quote.depositPercent || 30;
   const depositAmount = (totals.total * depositPercent) / 100;
   const isAccepted = quote.status === 'accepted';
+
+  const shareUrl = getShareableQuoteUrl(quote, business);
 
   const handleSignatureSuccess = ({ signatureData, signerName, signedAt }) => {
     const updated = {
@@ -33,8 +37,8 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
 
     try {
       confetti({
-        particleCount: 100,
-        spread: 70,
+        particleCount: 110,
+        spread: 75,
         origin: { y: 0.6 }
       });
     } catch (e) {}
@@ -49,10 +53,22 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
     setShowDepositModal(false);
   };
 
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(shareUrl);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2500);
+  };
+
   const getWhatsAppLink = () => {
     const cleanPhone = (quote.clientPhone || '').replace(/\D/g, '');
-    const message = `Hola *${quote.clientName}*, te comparto la propuesta formal de *${business.name}* (Ref: *${quote.id}*) por un total de *${formatCurrency(totals.total, business.currency, business.currencySymbol)}*.\n\nPuedes revisarla y firmarla digitalmente aquí para iniciar los trabajos. ¡Quedamos a tu disposición!`;
+    const message = `Hola *${quote.clientName}*, te comparto la propuesta formal de *${business.name}* (Ref: *${quote.id}*) por un total de *${formatCurrency(totals.total, business.currency, business.currencySymbol)}*.\n\nPuedes revisarla, firmarla y ver los detalles aquí:\n${shareUrl}\n\n¡Quedamos atentos a tus comentarios!`;
     return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+  };
+
+  const getClientConfirmWhatsAppLink = () => {
+    const cleanProviderPhone = (business.phone || '').replace(/\D/g, '');
+    const message = `Hola *${business.name}*, he revisado y aceptado formalmente la cotización *${quote.id}* por un total de *${formatCurrency(totals.total, business.currency, business.currencySymbol)}* con firma digital${quote.depositPaid ? ' y anticipo abonado' : ''}. ¡Quedo atento a la fecha de inicio!`;
+    return `https://wa.me/${cleanProviderPhone}?text=${encodeURIComponent(message)}`;
   };
 
   const handlePrint = () => {
@@ -60,54 +76,88 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-4xl mx-auto px-4 py-6 sm:py-8 pb-24 md:pb-8">
       {/* Top Action Bar (Hidden on print) */}
-      <div className="no-print flex flex-wrap items-center justify-between gap-4 mb-8 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-900 transition"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Volver al Panel
-        </button>
-
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Follow-up button */}
+      <div className="no-print flex flex-wrap items-center justify-between gap-3 mb-6 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-sm">
+        
+        {isClientMode ? (
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-xs font-semibold text-slate-600">
+              Cotización oficial de <strong className="text-slate-900">{business.name}</strong>
+            </span>
+          </div>
+        ) : (
           <button
-            onClick={() => setShowFollowUpModal(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition border border-emerald-200/60"
+            onClick={onBack}
+            className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-slate-700 hover:text-slate-900 transition"
           >
-            <Bot className="w-4 h-4 text-emerald-600" />
-            Follow-up Fantasma (IA)
+            <ArrowLeft className="w-4 h-4" />
+            Volver al Panel
           </button>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Contractor Controls (Hidden in Client Mode) */}
+          {!isClientMode && (
+            <>
+              <button
+                onClick={handleCopyLink}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition"
+              >
+                {linkCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                <span>{linkCopied ? '¡Enlace Copiado!' : 'Copiar Link'}</span>
+              </button>
+
+              <button
+                onClick={() => setShowFollowUpModal(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition border border-emerald-200/60"
+              >
+                <Bot className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="hidden sm:inline">Follow-up IA</span>
+              </button>
+            </>
+          )}
 
           <button
             onClick={handlePrint}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-medium transition shadow-xs"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-medium transition shadow-xs"
           >
-            <Printer className="w-4 h-4" />
-            Descargar PDF
+            <Printer className="w-3.5 h-3.5" />
+            <span>PDF</span>
           </button>
 
-          {quote.clientPhone && (
+          {!isClientMode && quote.clientPhone && (
             <a
               href={getWhatsAppLink()}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-sm shadow-emerald-600/20"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-sm shadow-emerald-600/20"
             >
-              <Send className="w-4 h-4" />
-              WhatsApp
+              <Send className="w-3.5 h-3.5" />
+              <span>WhatsApp</span>
+            </a>
+          )}
+
+          {isClientMode && isAccepted && business.phone && (
+            <a
+              href={getClientConfirmWhatsAppLink()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-sm shadow-emerald-600/20"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>Notificar al Proveedor</span>
             </a>
           )}
 
           {!isAccepted && (
             <button
               onClick={() => setShowSignModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-md shadow-indigo-600/25"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-md shadow-indigo-600/25"
             >
-              <Sparkles className="w-4 h-4" />
-              Firmar Cotización
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Firmar Cotización</span>
             </button>
           )}
         </div>
@@ -144,17 +194,17 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
       )}
 
       {/* Printable Quote Paper */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-8 sm:p-12 shadow-xl print:shadow-none print:border-none print:p-0">
+      <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-12 shadow-xl print:shadow-none print:border-none print:p-0">
         
         {/* Header / Brand & Status */}
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 pb-8 border-b border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 pb-6 sm:pb-8 border-b border-slate-100">
           <div>
             <div className="flex items-center gap-3 mb-2">
               <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-black text-xl shadow-md shadow-indigo-600/30">
                 {business.name.substring(0, 2).toUpperCase()}
               </div>
               <div>
-                <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">{business.name}</h1>
+                <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">{business.name}</h1>
                 <p className="text-xs text-slate-500 font-medium">{business.slogan}</p>
               </div>
             </div>
@@ -191,7 +241,7 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
               )}
             </div>
 
-            <h2 className="text-xl font-bold text-slate-900 mt-3">{quote.id}</h2>
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900 mt-2 sm:mt-3">{quote.id}</h2>
             <p className="text-xs text-slate-500 mt-1">
               Fecha de emisión: <strong className="text-slate-700">{quote.date}</strong>
             </p>
@@ -202,9 +252,9 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
         </div>
 
         {/* Client Info Grid */}
-        <div className="my-8 grid grid-cols-1 sm:grid-cols-2 gap-6 bg-slate-50/70 rounded-2xl p-6 border border-slate-100">
+        <div className="my-6 sm:my-8 grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 bg-slate-50/70 rounded-2xl p-4 sm:p-6 border border-slate-100">
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-2">
+            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
               Presupuesto preparado para:
             </span>
             <h3 className="font-bold text-slate-900 text-base">{quote.clientName}</h3>
@@ -216,7 +266,7 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
             )}
           </div>
           <div className="sm:text-right space-y-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-2 sm:mb-0">
+            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
               Datos de contacto:
             </span>
             {quote.clientPhone && (
@@ -235,27 +285,27 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
         </div>
 
         {/* Items Table */}
-        <div className="overflow-x-auto my-8">
-          <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto my-6 sm:my-8">
+          <table className="w-full text-left border-collapse min-w-[500px]">
             <thead>
-              <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wider font-bold text-slate-400">
-                <th className="py-3 px-2">#</th>
-                <th className="py-3 px-2">Descripción del Trabajo / Material</th>
-                <th className="py-3 px-2 text-center">Cant.</th>
-                <th className="py-3 px-2 text-right">Precio Unit.</th>
-                <th className="py-3 px-2 text-right">Total</th>
+              <tr className="border-b border-slate-200 text-[10px] sm:text-[11px] uppercase tracking-wider font-bold text-slate-400">
+                <th className="py-2.5 px-2">#</th>
+                <th className="py-2.5 px-2">Descripción del Trabajo / Suministro</th>
+                <th className="py-2.5 px-2 text-center">Cant.</th>
+                <th className="py-2.5 px-2 text-right">Precio Unit.</th>
+                <th className="py-2.5 px-2 text-right">Total</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-sm">
+            <tbody className="divide-y divide-slate-100 text-xs sm:text-sm">
               {quote.items.map((item, idx) => (
                 <tr key={item.id || idx} className="hover:bg-slate-50/50">
-                  <td className="py-3.5 px-2 text-slate-400 text-xs">{idx + 1}</td>
-                  <td className="py-3.5 px-2 font-medium text-slate-800">{item.description}</td>
-                  <td className="py-3.5 px-2 text-center text-slate-600">{item.quantity}</td>
-                  <td className="py-3.5 px-2 text-right text-slate-600">
+                  <td className="py-3 px-2 text-slate-400 text-xs">{idx + 1}</td>
+                  <td className="py-3 px-2 font-medium text-slate-800">{item.description}</td>
+                  <td className="py-3 px-2 text-center text-slate-600">{item.quantity}</td>
+                  <td className="py-3 px-2 text-right text-slate-600">
                     {formatCurrency(item.unitPrice, business.currency, business.currencySymbol)}
                   </td>
-                  <td className="py-3.5 px-2 text-right font-semibold text-slate-900">
+                  <td className="py-3 px-2 text-right font-semibold text-slate-900">
                     {formatCurrency(item.quantity * item.unitPrice, business.currency, business.currencySymbol)}
                   </td>
                 </tr>
@@ -265,7 +315,7 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
         </div>
 
         {/* Totals Section */}
-        <div className="flex flex-col sm:flex-row justify-between gap-8 pt-4 pb-8 border-b border-slate-100">
+        <div className="flex flex-col sm:flex-row justify-between gap-6 sm:gap-8 pt-4 pb-6 sm:pb-8 border-b border-slate-100">
           <div className="max-w-md">
             {quote.notes && (
               <div className="mb-4">
@@ -283,7 +333,7 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
             </div>
           </div>
 
-          <div className="w-full sm:w-72 space-y-2.5 text-sm">
+          <div className="w-full sm:w-72 space-y-2 text-xs sm:text-sm">
             <div className="flex justify-between text-slate-600">
               <span>Subtotal:</span>
               <span className="font-medium">{formatCurrency(totals.subtotal, business.currency, business.currencySymbol)}</span>
@@ -303,14 +353,14 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
               </div>
             )}
 
-            <div className="flex justify-between items-center pt-3 border-t-2 border-slate-900 text-base font-extrabold text-slate-900">
+            <div className="flex justify-between items-center pt-2.5 border-t-2 border-slate-900 text-sm sm:text-base font-extrabold text-slate-900">
               <span>TOTAL:</span>
-              <span className="text-xl text-indigo-600">
+              <span className="text-lg sm:text-xl text-indigo-600">
                 {formatCurrency(totals.total, business.currency, business.currencySymbol)}
               </span>
             </div>
 
-            <div className="pt-2 text-xs text-slate-500 flex justify-between border-t border-slate-200">
+            <div className="pt-2 text-[11px] sm:text-xs text-slate-500 flex justify-between border-t border-slate-200">
               <span>Anticipo de inicio ({depositPercent}%):</span>
               <span className="font-bold text-slate-800">
                 {formatCurrency(depositAmount, business.currency, business.currencySymbol)}
@@ -331,12 +381,12 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
                   Anticipo abonado exitosamente ({formatCurrency(quote.depositAmount || depositAmount, business.currency, business.currencySymbol)})
                 </h4>
                 <p className="text-xs text-emerald-700">
-                  Abonado mediante {quote.paymentMethod || 'Tarjeta'} el {new Date(quote.depositPaidAt || Date.now()).toLocaleDateString('es-ES')}
+                  Abonado mediante {quote.paymentMethod || 'Nequi / Tarjeta'} el {new Date(quote.depositPaidAt || Date.now()).toLocaleDateString('es-CO')}
                 </p>
               </div>
             </div>
             <span className="text-[11px] font-mono font-bold text-emerald-800 bg-emerald-100/60 px-3 py-1 rounded-xl">
-              {quote.transactionId || 'TXN-PAGADO'}
+              {quote.transactionId || 'PAGADO'}
             </span>
           </div>
         ) : isAccepted ? (
@@ -350,7 +400,7 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
                 Abonar anticipo para congelar la fecha ({depositPercent}%): {formatCurrency(depositAmount, business.currency, business.currencySymbol)}
               </h4>
               <p className="text-xs text-slate-500">
-                Garantiza la compra inmediata de materiales y la reserva de los técnicos.
+                Garantiza la compra inmediata de materiales y la reserva técnica en la agenda.
               </p>
             </div>
             <button
@@ -358,7 +408,7 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
               className="px-6 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-600/30 transition shrink-0"
             >
               <CreditCard className="w-4 h-4" />
-              Abonar con Tarjeta / Apple Pay
+              Abonar con Nequi / Tarjeta
             </button>
           </div>
         ) : null}
@@ -367,7 +417,7 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
         <div className="mt-8 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-8">
           <div>
             <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Por la Empresa Proveedora</p>
-            <div className="h-24 border-b border-slate-300 flex flex-col justify-end pb-2">
+            <div className="h-20 sm:h-24 border-b border-slate-300 flex flex-col justify-end pb-2">
               <span className="font-semibold text-sm text-slate-800">{business.name}</span>
               <span className="text-xs text-slate-500">Representante Autorizado</span>
             </div>
@@ -386,13 +436,13 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
                 )}
                 <p className="text-xs font-bold text-slate-900">{quote.signedBy}</p>
                 <p className="text-[11px] text-emerald-700">
-                  Firmado digitalmente el {new Date(quote.signedAt).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  Firmado digitalmente el {new Date(quote.signedAt).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </p>
               </div>
             ) : (
               <div 
                 onClick={() => setShowSignModal(true)}
-                className="h-24 border-2 border-dashed border-indigo-200 hover:border-indigo-400 rounded-2xl flex flex-col items-center justify-center cursor-pointer bg-indigo-50/30 transition no-print"
+                className="h-20 sm:h-24 border-2 border-dashed border-indigo-200 hover:border-indigo-400 rounded-2xl flex flex-col items-center justify-center cursor-pointer bg-indigo-50/30 transition no-print"
               >
                 <Sparkles className="w-5 h-5 text-indigo-600 mb-1" />
                 <span className="text-xs font-semibold text-indigo-600">Haz clic aquí para firmar</span>
@@ -403,6 +453,19 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote }) {
         </div>
 
       </div>
+
+      {/* Client Mode Footer: Subtle viral link to create quotes with CotiZone */}
+      {isClientMode && (
+        <div className="no-print mt-10 text-center text-xs text-slate-400">
+          <p>Documento generado con seguridad por <strong>CotiZone</strong></p>
+          <button
+            onClick={onGoToApp}
+            className="text-indigo-600 hover:underline mt-1 font-medium inline-flex items-center gap-1"
+          >
+            ¿También necesitas enviar cotizaciones profesionales? Pruébalo gratis <ExternalLink className="w-3 h-3" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

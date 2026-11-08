@@ -14,26 +14,32 @@ import {
   getStoredBusiness, 
   saveStoredBusiness 
 } from './utils/storage';
+import { decodeQuoteFromUrl } from './utils/shareUtils';
 
 export default function App() {
+  const [clientSharedData, setClientSharedData] = useState(() => decodeQuoteFromUrl());
   const [quotes, setQuotes] = useState(() => getStoredQuotes());
   const [business, setBusiness] = useState(() => getStoredBusiness());
-  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'editor' | 'view'
-  const [selectedQuote, setSelectedQuote] = useState(null);
+  const [currentView, setCurrentView] = useState(() => clientSharedData ? 'client-view' : 'dashboard');
+  const [selectedQuote, setSelectedQuote] = useState(() => clientSharedData ? clientSharedData.quote : null);
   const [showSettings, setShowSettings] = useState(false);
   const [showPricing, setShowPricing] = useState(false);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [followUpQuote, setFollowUpQuote] = useState(null);
 
-  // Sync quotes to localStorage
+  // Sync quotes to localStorage (only in contractor mode)
   useEffect(() => {
-    saveStoredQuotes(quotes);
-  }, [quotes]);
+    if (!clientSharedData) {
+      saveStoredQuotes(quotes);
+    }
+  }, [quotes, clientSharedData]);
 
   // Sync business to localStorage
   useEffect(() => {
-    saveStoredBusiness(business);
-  }, [business]);
+    if (!clientSharedData) {
+      saveStoredBusiness(business);
+    }
+  }, [business, clientSharedData]);
 
   const handleCreateQuote = () => {
     setSelectedQuote(null);
@@ -62,7 +68,7 @@ export default function App() {
       status: 'draft',
       notes: parsedData.notes || '',
       discountPercent: 0,
-      taxPercent: business.taxRate || 21,
+      taxPercent: business.taxRate || 19,
       depositPercent: parsedData.depositPercent || 30,
       depositPaid: false,
       items: parsedData.items || [],
@@ -91,9 +97,14 @@ export default function App() {
   };
 
   const handleUpdateQuote = (updatedQuote) => {
-    const updatedQuotes = quotes.map(q => q.id === updatedQuote.id ? updatedQuote : q);
-    setQuotes(updatedQuotes);
-    setSelectedQuote(updatedQuote);
+    if (clientSharedData) {
+      // In client mode, update state in memory
+      setSelectedQuote(updatedQuote);
+    } else {
+      const updatedQuotes = quotes.map(q => q.id === updatedQuote.id ? updatedQuote : q);
+      setQuotes(updatedQuotes);
+      setSelectedQuote(updatedQuote);
+    }
   };
 
   const handleDeleteQuote = (quoteId) => {
@@ -125,18 +136,39 @@ export default function App() {
     setCurrentView('editor');
   };
 
+  const handleExitClientMode = () => {
+    window.history.replaceState({}, document.title, window.location.pathname);
+    setClientSharedData(null);
+    setSelectedQuote(null);
+    setCurrentView('landing');
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
-      <Navbar
-        currentView={currentView}
-        onNavigate={(view) => setCurrentView(view)}
-        onOpenSettings={() => setShowSettings(true)}
-        onOpenPricing={() => setShowPricing(true)}
-        onOpenVoiceQuote={() => setShowVoiceModal(true)}
-        business={business}
-      />
+      {/* Hide navbar if in public client view mode */}
+      {currentView !== 'client-view' && (
+        <Navbar
+          currentView={currentView}
+          onNavigate={(view) => setCurrentView(view)}
+          onOpenSettings={() => setShowSettings(true)}
+          onOpenPricing={() => setShowPricing(true)}
+          onOpenVoiceQuote={() => setShowVoiceModal(true)}
+          business={business}
+        />
+      )}
 
       <main className="flex-1">
+        {/* Client Shared View (Direct from WhatsApp link) */}
+        {currentView === 'client-view' && selectedQuote && (
+          <QuoteView
+            quote={selectedQuote}
+            business={clientSharedData ? clientSharedData.business : business}
+            isClientMode={true}
+            onUpdateQuote={handleUpdateQuote}
+            onGoToApp={handleExitClientMode}
+          />
+        )}
+
         {currentView === 'landing' && (
           <LandingPage
             onGoToApp={() => setCurrentView('dashboard')}
@@ -208,12 +240,14 @@ export default function App() {
         />
       )}
 
-      {/* Footer */}
-      <footer className="no-print mt-auto py-6 border-t border-slate-200/60 bg-white/50 text-center text-xs text-slate-400">
-        <p>
-          <strong>CotiZone</strong> — Plataforma SaaS de Presupuestos & Firma Express.
-        </p>
-      </footer>
+      {/* Footer (Hidden in client view) */}
+      {currentView !== 'client-view' && (
+        <footer className="no-print mt-auto py-6 border-t border-slate-200/60 bg-white/50 text-center text-xs text-slate-400">
+          <p>
+            <strong>CotiZone</strong> — Plataforma SaaS de Presupuestos & Firma Express.
+          </p>
+        </footer>
+      )}
     </div>
   );
 }
