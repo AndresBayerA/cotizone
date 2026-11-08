@@ -41,67 +41,90 @@ export function parseVoiceQuoteText(rawText) {
   // Clean any speech artifacts
   const text = deduplicateSpeech(rawText.trim());
 
-  // 1. Client Name: preserve exactly whatever name was spoken/written (e.g. "Don Matthew", "Carlos", etc.)
-  let clientName = 'Cliente';
-  const clientMatch = text.match(/(?:para|cotizar a|cliente|don|doña|señor|señora)\s+([A-Za-zÁÉÍÓÚáéíóúñÑ\s]+?)(?:,|\.|necesito|cotizar|cotices|quiero|por favor|instalar|cambiar|reparar|poner|hacer|\b(un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|\d+)\b|\$|$)/i);
-  if (clientMatch && clientMatch[1]) {
-    const raw = clientMatch[1].trim();
-    if (raw.length > 1) {
-      clientName = raw.charAt(0).toUpperCase() + raw.slice(1);
+  // 1. EXTRACT PRICE FIRST (before numbers are confused with quantities)
+  let price = 50000;
+  
+  // A) Check "millones" / "millón" (e.g. "50 millones", "3.5 millones", "1 millón")
+  const millionsMatch = text.match(/([\d\.\,]+)\s*(?:millones|millón|millon)/i);
+  if (millionsMatch) {
+    let rawNum = millionsMatch[1];
+    // If it has decimal like 3.5 or 3,5
+    if (/^\d+[\.\,]\d+$/.test(rawNum)) {
+      price = parseFloat(rawNum.replace(',', '.')) * 1000000;
+    } else {
+      let clean = rawNum.replace(/\./g, '').replace(/,/g, '');
+      price = (parseFloat(clean) || 1) * 1000000;
+    }
+  } else {
+    // B) Check "mil" or regular prices: "por valor de X", "a $X", "$X", "a X mil"
+    const pricePattern = /(?:por\s+valor\s+de|valor\s+de|precio\s+de|a\s+\$|\$|a\s+)([\d\.\,]+)\s*(mil|k)?(?:\s*(?:pesos|cop))?/i;
+    const pm = text.match(pricePattern) || text.match(/\$?\s*([\d\.\,]+)\s*(mil|k)(?:\s*(?:pesos|cop))?/i) || text.match(/\$\s*([\d\.\,]+)/);
+    if (pm) {
+      let clean = pm[1].replace(/\./g, '').replace(/,/g, '');
+      let val = parseFloat(clean) || 0;
+      if (pm[2] || (val > 0 && val < 1000)) {
+        val = val * 1000;
+      }
+      if (val > 0) price = val;
     }
   }
 
-  // 2. Quantity & Concept
-  let quantity = 1;
-  let description = 'Servicio profesional';
+  // 2. EXTRACT CLIENT NAME
+  let clientName = 'Cliente';
+  const clientMatch = text.match(/(?:cotices\s+a|cotizar\s+a|cotizarle\s+a|\bpara\b|\bcliente\b|\ba\b(?!\s*[\d\$]))\s+([A-Za-zÁÉÍÓÚáéíóúñÑ0-9]+)(?:\s+([A-Za-zÁÉÍÓÚáéíóúñÑ0-9]+))?/i);
+  if (clientMatch) {
+    let first = clientMatch[1];
+    let second = clientMatch[2] || '';
+    // Exclude stopwords from second name word
+    if (/^(una|un|dos|tres|cuatro|cinco|diez|cotizar|cotices|cotizarle|instalar|cambiar|reparar|por|la|el|\d+)$/i.test(second)) {
+      second = '';
+    }
+    let full = (first + ' ' + second).trim();
+    if (full.length > 1) {
+      clientName = full.charAt(0).toUpperCase() + full.slice(1);
+    }
+  }
 
-  // Check word numbers: "tres helados"
+  // 3. STRIP PRICE FROM TEXT to accurately isolate items & quantities
+  let cleanText = text
+    .replace(/(?:por\s+valor\s+de|valor\s+de|precio\s+de)?\s*[\d\.\,]+\s*(?:millones|millón|millon|mil|k)?\s*(?:de\s+pesos|pesos|cop|cada\s+uno|c\/u)?/gi, ' ')
+    .replace(/\$\s*[\d\.\,]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // 4. EXTRACT QUANTITY & CONCEPT
+  let quantity = 1;
+  let description = 'Servicio / Suministro profesional';
+
+  // Words like: "una cocina", "tres helados", "dos comedores"
   for (const [w, n] of Object.entries(NUMBER_WORDS)) {
     const regex = new RegExp(`\\b${w}\\s+([a-zA-ZáéíóúñÑ]+)`, 'i');
-    const m = text.match(regex);
-    if (m && !/^(mil|k|pesos|dolares|usd|cop|cada|horas?|dias?|mes|meses|y)$/i.test(m[1])) {
+    const km = cleanText.match(regex);
+    if (km && !/^(mil|millon|millones|pesos|dolares|usd|cop|cada|horas?|dias?|de|y|para|a|que|le)$/i.test(km[1])) {
       quantity = n;
-      description = m[1].charAt(0).toUpperCase() + m[1].slice(1);
+      description = km[1].charAt(0).toUpperCase() + km[1].slice(1);
       break;
     }
   }
 
-  // Check digit numbers: "5 ventiladores", "3 helados"
+  // Digits: "5 ventiladores", "3 helados"
   if (quantity === 1) {
-    const digitMatches = [...text.matchAll(/\b(\d+)\s+([a-zA-ZáéíóúñÑ]+)/gi)];
-    for (const dm of digitMatches) {
-      if (!/^(mil|k|pesos|dolares|usd|cop|cada|horas?|dias?)$/i.test(dm[2])) {
-        const q = parseInt(dm[1], 10);
-        if (q > 0 && q < 500) {
-          quantity = q;
-          description = dm[2].charAt(0).toUpperCase() + dm[2].slice(1);
-          break;
-        }
+    const digitMatch = cleanText.match(/\b(\d+)\s+([a-zA-ZáéíóúñÑ]+)/i);
+    if (digitMatch && !/^(mil|millon|millones|pesos|dolares|usd|cop|cada)$/i.test(digitMatch[2])) {
+      const q = parseInt(digitMatch[1], 10);
+      if (q > 0 && q < 500) {
+        quantity = q;
+        description = digitMatch[2].charAt(0).toUpperCase() + digitMatch[2].slice(1);
       }
     }
   }
 
-  // Fallback description if still generic
-  if (description === 'Servicio profesional') {
-    const actionMatch = text.match(/(?:instalar|reparar|cambiar|poner|hacer|mantenimiento|suministro)\s+([^,\.\$]+?)(?:\s+a\s+\$|\s+a\s+\d|\s+por\s+\$|\$|$)/i);
-    if (actionMatch && actionMatch[1]) {
-      description = actionMatch[1].trim().charAt(0).toUpperCase() + actionMatch[1].trim().slice(1);
+  // Fallback description: find key nouns (cocina, muebles, etc.)
+  if (description === 'Servicio / Suministro profesional') {
+    const itemMatch = cleanText.match(/(?:cocina|mueble|termo|puerta|ventana|reforma|pintura|instalación|calentador|helado|comedor)\w*/i);
+    if (itemMatch) {
+      description = itemMatch[0].charAt(0).toUpperCase() + itemMatch[0].slice(1);
     }
-  }
-
-  // 3. Price: look for price markers: "a $50,000", "a 120 mil", "a 380.000", "$50000"
-  let price = 50000;
-  const priceMatch = text.match(/(?:a|\$|precio|valor|por|total)\s*\$?\s*([\d\.\,]+)\s*(mil|k)?(?:\s*(?:pesos|cop))?/i)
-    || text.match(/\$?\s*([\d\.\,]+)\s*(mil|k)(?:\s*(?:pesos|cop))?/i)
-    || text.match(/\$\s*([\d\.\,]+)/);
-
-  if (priceMatch) {
-    let clean = priceMatch[1].replace(/\./g, '').replace(/,/g, '');
-    let val = parseFloat(clean) || 0;
-    if (priceMatch[2] || (val > 0 && val < 1000)) {
-      val = val * 1000;
-    }
-    if (val > 0) price = val;
   }
 
   return {
