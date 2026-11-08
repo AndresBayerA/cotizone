@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft, Share2, Printer, CheckCircle2, Clock, 
   MapPin, Phone, Mail, Building, FileText, Send, Sparkles, 
@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { calculateTotals, formatCurrency } from '../utils/storage';
-import { getShareableQuoteUrl } from '../utils/shareUtils';
+import { getShareableQuoteUrl, getShortQuoteUrl } from '../utils/shareUtils';
 import SignaturePad from './SignaturePad';
 import DepositPaymentModal from './DepositPaymentModal';
 import FollowUpModal from './FollowUpModal';
@@ -16,13 +16,26 @@ export default function QuoteView({ quote, business, onBack, onUpdateQuote, isCl
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [activeShareUrl, setActiveShareUrl] = useState(() => getShareableQuoteUrl(quote, business));
+
+  useEffect(() => {
+    let isMounted = true;
+    getShortQuoteUrl(quote, business).then((short) => {
+      if (isMounted && short) {
+        setActiveShareUrl(short);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [quote.id, quote.date, quote.items]);
 
   const totals = calculateTotals(quote.items, quote.discountPercent, quote.taxPercent);
   const depositPercent = quote.depositPercent || 30;
   const depositAmount = (totals.total * depositPercent) / 100;
   const isAccepted = quote.status === 'accepted';
 
-  const shareUrl = getShareableQuoteUrl(quote, business);
+  const shareUrl = activeShareUrl;
 
   const handleSignatureSuccess = ({ signatureData, signerName, signedAt }) => {
     const updated = {

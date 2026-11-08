@@ -5,7 +5,7 @@ import {
   DollarSign, Award, AlertCircle, Mic, Bot, Sparkles, ShieldCheck 
 } from 'lucide-react';
 import { calculateTotals, formatCurrency } from '../utils/storage';
-import { getShareableQuoteUrl } from '../utils/shareUtils';
+import { getShareableQuoteUrl, getShortQuoteUrl } from '../utils/shareUtils';
 
 export default function Dashboard({ 
   quotes, 
@@ -51,6 +51,19 @@ export default function Dashboard({
     const shareUrl = getShareableQuoteUrl(quote, business);
     const message = `Hola *${quote.clientName}*, te adjunto la cotización formal de *${business.name}* (Ref: *${quote.id}*) por un total de *${formatCurrency(totals.total, business.currency, business.currencySymbol)}*.\n\nPuedes verla y firmarla formalmente desde tu teléfono en este enlace:\n${shareUrl}\n\n¡Quedamos atentos a tus comentarios!`;
     return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+  };
+
+  const handleWhatsAppShare = async (quote, e) => {
+    if (e) e.preventDefault();
+    const totals = calculateTotals(quote.items, quote.discountPercent, quote.taxPercent);
+    const cleanPhone = (quote.clientPhone || '').replace(/\D/g, '');
+    let url = getShareableQuoteUrl(quote, business);
+    try {
+      const short = await getShortQuoteUrl(quote, business);
+      if (short) url = short;
+    } catch (err) {}
+    const message = `Hola *${quote.clientName}*, te adjunto la cotización formal de *${business.name}* (Ref: *${quote.id}*) por un total de *${formatCurrency(totals.total, business.currency, business.currencySymbol)}*.\n\nPuedes verla y firmarla formalmente desde tu teléfono en este enlace:\n${url}\n\n¡Quedamos atentos a tus comentarios!`;
+    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -276,6 +289,7 @@ export default function Dashboard({
                       {q.clientPhone && (
                         <a
                           href={getWhatsAppShareUrl(q)}
+                          onClick={(e) => handleWhatsAppShare(q, e)}
                           target="_blank"
                           rel="noopener noreferrer"
                           title="Compartir por WhatsApp"

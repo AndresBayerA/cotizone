@@ -1,11 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Send, Bot, Clock, Sparkles, MessageCircle, Check, Calendar, AlertCircle } from 'lucide-react';
 import { formatCurrency, calculateTotals } from '../utils/storage';
+import { getShareableQuoteUrl, getShortQuoteUrl } from '../utils/shareUtils';
 
 export default function FollowUpModal({ quote, business, onClose }) {
   const [selectedTemplate, setSelectedTemplate] = useState(0);
   const [copied, setCopied] = useState(false);
   const [autoFollowUp, setAutoFollowUp] = useState(true);
+  const [shareUrl, setShareUrl] = useState(() => getShareableQuoteUrl(quote, business));
+
+  useEffect(() => {
+    let isMounted = true;
+    getShortQuoteUrl(quote, business).then(short => {
+      if (isMounted && short) setShareUrl(short);
+    });
+    return () => { isMounted = false; };
+  }, [quote.id, quote.date]);
 
   const totals = calculateTotals(quote.items, quote.discountPercent, quote.taxPercent);
   const cleanPhone = (quote.clientPhone || '').replace(/\D/g, '');
@@ -14,17 +24,17 @@ export default function FollowUpModal({ quote, business, onClose }) {
     {
       title: "Seguimiento Amistoso (24h - 48h)",
       desc: "Ideal para romper el hielo y consultar dudas técnicas",
-      message: `Hola *${quote.clientName}*, ¿cómo estás? Te escribo de parte de *${business.name}*. Quería consultar si tuviste oportunidad de revisar la propuesta del trabajo (${quote.id}). Si tienes alguna duda sobre los materiales o los plazos, con gusto lo revisamos juntos.`
+      message: `Hola *${quote.clientName}*, ¿cómo estás? Te escribo de parte de *${business.name}*. Quería consultar si tuviste oportunidad de revisar la propuesta del trabajo (${quote.id}). Si deseas volver a revisarla o firmarla en línea, puedes hacerlo aquí:\n${shareUrl}\n\nCon gusto aclaramos cualquier detalle.`
     },
     {
       title: "Reserva de Agenda y Disponibilidad",
       desc: "Genera urgencia sana para que confirmen su fecha",
-      message: `Hola *${quote.clientName}*, te saluda el equipo de *${business.name}*. Estamos cerrando el calendario de obras e instalaciones para la próxima semana. Si deseas que te reservemos las fechas de tu proyecto, confírmanos por aquí o con tu firma en el enlace: https://cotizone.app/p/${quote.id}`
+      message: `Hola *${quote.clientName}*, te saluda el equipo de *${business.name}*. Estamos cerrando el calendario de obras e instalaciones para la próxima semana. Si deseas que te reservemos las fechas de tu proyecto, confírmanos por aquí o con tu firma en el enlace:\n${shareUrl}`
     },
     {
       title: "Garantía de Precios de Materiales",
       desc: "Excelente cuando los clientes postergan la decisión",
-      message: `Hola *${quote.clientName}*, un saludo cordial. Te recordamos que la cotización *${quote.id}* por un total de *${formatCurrency(totals.total, business.currency, business.currencySymbol)}* tiene los precios de materiales congelados durante su período de validez. ¡Quedamos listos para iniciar cuando nos indiques!`
+      message: `Hola *${quote.clientName}*, un saludo cordial. Te recordamos que la cotización *${quote.id}* por un total de *${formatCurrency(totals.total, business.currency, business.currencySymbol)}* tiene los precios de materiales congelados durante su período de validez. Puedes firmarla aquí:\n${shareUrl}\n\n¡Quedamos listos para iniciar cuando nos indiques!`
     }
   ];
 
